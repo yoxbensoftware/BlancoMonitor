@@ -21,10 +21,8 @@ internal static class Program
 {
     // ── Update manifest URL ─────────────────────────────────────────
     // Hosted on GitHub raw content — updated automatically by the release workflow.
-    // Replace GITHUB_USER/GITHUB_REPO with your actual repository path.
-    // Example: https://raw.githubusercontent.com/ozgen/blanco-monitor/main/update-manifest.json
     private const string UpdateManifestUrl =
-        "https://raw.githubusercontent.com/GITHUB_USER/GITHUB_REPO/main/update-manifest.json";
+        "https://raw.githubusercontent.com/yoxbensoftware/BlancoMonitor/main/update-manifest.json";
 
     [STAThread]
     static void Main()

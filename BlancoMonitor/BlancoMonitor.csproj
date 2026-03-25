@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Versioning: v.NNNN style — increment on each release -->
+    <Version>1.0.0.1</Version>
+    <AssemblyVersion>1.0.0.1</AssemblyVersion>
+    <FileVersion>1.0.0.1</FileVersion>
+    <InformationalVersion>v.0001</InformationalVersion>
+
+    <!-- Application metadata -->
+    <Product>BlancoMonitor</Product>
+    <Company>Oz</Company>
+    <Description>Non-invasive website performance monitoring and trace tool</Description>
+    <ApplicationIcon Condition="Exists('Assets\blanco.ico')">Assets\blanco.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.5" />
+  </ItemGroup>
+
+  <!-- Embed logo assets -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\blanco.ico" Condition="Exists('Assets\blanco.ico')" />
+    <None Include="Assets\blanco.ico" Condition="Exists('Assets\blanco.ico')" Pack="false" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

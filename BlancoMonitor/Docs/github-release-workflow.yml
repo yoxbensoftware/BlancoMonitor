@@ -1,0 +1,170 @@
+# BlancoMonitor — CI/CD Release & Update Architecture
+#
+# This GitHub Actions workflow automates the release pipeline:
+#   1. On push to main or tag push → build → test → package
+#   2. Version is derived from tag or auto-incremented
+#   3. ZIP artifact is created for distribution
+#   4. Update manifest (update-manifest.json) is generated
+#   5. Both are uploaded as release assets
+#
+# The desktop client checks the update manifest URL on startup
+# and prompts the user if a newer version exists.
+#
+# ═══════════════════════════════════════════════════════════
+#  VERSIONING STRATEGY
+# ═══════════════════════════════════════════════════════════
+#
+#  Display format:  v.0001, v.0002, v.0003, ...
+#  Assembly format: 1.0.0.{build_number}
+#
+#  How version increments:
+#    - Push a git tag like "v.0002" → workflow extracts build number
+#    - Or use github.run_number as auto-incrementing counter
+#
+#  InformationalVersion = "v.NNNN" (human-readable)
+#  AssemblyVersion      = "1.0.0.N" (machine-readable, N = build number)
+#
+# ═══════════════════════════════════════════════════════════
+#  RELEASE FLOW
+# ═══════════════════════════════════════════════════════════
+#
+#  Developer pushes tag "v.0002"
+#       ↓
+#  GitHub Actions triggers on: push tags 'v.*'
+#       ↓
+#  Workflow:
+#    1. Checkout code
+#    2. Extract build number from tag (v.0002 → 2)
+#    3. dotnet publish with /p:Version=1.0.0.2 /p:InformationalVersion=v.0002
+#    4. ZIP the publish output
+#    5. Compute SHA256 hash of ZIP
+#    6. Generate update-manifest.json with version, URL, hash, size
+#    7. Create GitHub Release with ZIP + manifest as assets
+#       ↓
+#  Client checks: https://github.com/{owner}/{repo}/releases/latest/download/update-manifest.json
+#       ↓
+#  If manifest.latestBuildNumber > client.BuildNumber → show UpdateDialog
+
+name: BlancoMonitor Release
+
+on:
+  push:
+    tags:
+      - 'v.*'
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  PROJECT_PATH: 'BlancoMonitor/BlancoMonitor.csproj'
+  PUBLISH_DIR: 'publish'
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Extract version from tag
+      id: version
+      shell: pwsh
+      run: |
+        $tag = "${{ github.ref_name }}"
+        # Tag format: v.0002
+        $buildNumber = [int]($tag -replace 'v\.', '')
+        $displayVersion = $tag
+        $assemblyVersion = "1.0.0.$buildNumber"
+        
+        echo "BUILD_NUMBER=$buildNumber" >> $env:GITHUB_OUTPUT
+        echo "DISPLAY_VERSION=$displayVersion" >> $env:GITHUB_OUTPUT
+        echo "ASSEMBLY_VERSION=$assemblyVersion" >> $env:GITHUB_OUTPUT
+        
+        Write-Host "Build Number: $buildNumber"
+        Write-Host "Display Version: $displayVersion"
+        Write-Host "Assembly Version: $assemblyVersion"
+
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.PROJECT_PATH }}
+
+    - name: Build
+      run: |
+        dotnet build ${{ env.PROJECT_PATH }} --configuration Release --no-restore `
+          /p:Version=${{ steps.version.outputs.ASSEMBLY_VERSION }} `
+          /p:AssemblyVersion=${{ steps.version.outputs.ASSEMBLY_VERSION }} `
+          /p:FileVersion=${{ steps.version.outputs.ASSEMBLY_VERSION }} `
+          /p:InformationalVersion=${{ steps.version.outputs.DISPLAY_VERSION }}
+
+    - name: Publish
+      run: |
+        dotnet publish ${{ env.PROJECT_PATH }} --configuration Release --output ${{ env.PUBLISH_DIR }} `
+          /p:Version=${{ steps.version.outputs.ASSEMBLY_VERSION }} `
+          /p:AssemblyVersion=${{ steps.version.outputs.ASSEMBLY_VERSION }} `
+          /p:FileVersion=${{ steps.version.outputs.ASSEMBLY_VERSION }} `
+          /p:InformationalVersion=${{ steps.version.outputs.DISPLAY_VERSION }} `
+          --self-contained false
+
+    - name: Create ZIP package
+      shell: pwsh
+      run: |
+        $zipName = "BlancoMonitor_${{ steps.version.outputs.DISPLAY_VERSION }}.zip"
+        Compress-Archive -Path "${{ env.PUBLISH_DIR }}/*" -DestinationPath $zipName
+        echo "ZIP_NAME=$zipName" >> $env:GITHUB_OUTPUT
+        echo "ZIP_SIZE=$((Get-Item $zipName).Length)" >> $env:GITHUB_OUTPUT
+      id: package
+
+    - name: Compute SHA256 hash
+      id: hash
+      shell: pwsh
+      run: |
+        $hash = (Get-FileHash "${{ steps.package.outputs.ZIP_NAME }}" -Algorithm SHA256).Hash.ToLower()
+        echo "SHA256=$hash" >> $env:GITHUB_OUTPUT
+        Write-Host "SHA256: $hash"
+
+    - name: Generate update manifest
+      shell: pwsh
+      run: |
+        $manifest = @{
+          latestVersion      = "${{ steps.version.outputs.DISPLAY_VERSION }}"
+          latestBuildNumber   = [int]"${{ steps.version.outputs.BUILD_NUMBER }}"
+          downloadUrl        = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.package.outputs.ZIP_NAME }}"
+          sizeBytes          = [long]"${{ steps.package.outputs.ZIP_SIZE }}"
+          releaseNotes       = "Release ${{ steps.version.outputs.DISPLAY_VERSION }}"
+          releasedAt         = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+          sha256Hash         = "${{ steps.hash.outputs.SHA256 }}"
+          isMandatory        = $false
+          minimumSupportedVersion = "v.0001"
+        }
+        $manifest | ConvertTo-Json -Depth 5 | Set-Content "update-manifest.json"
+        Write-Host "Manifest generated:"
+        Get-Content "update-manifest.json"
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: "BlancoMonitor ${{ steps.version.outputs.DISPLAY_VERSION }}"
+        body: |
+          ## BlancoMonitor ${{ steps.version.outputs.DISPLAY_VERSION }}
+          
+          **Build:** ${{ steps.version.outputs.BUILD_NUMBER }}
+          **SHA256:** `${{ steps.hash.outputs.SHA256 }}`
+          
+          ### Installation
+          1. Download `${{ steps.package.outputs.ZIP_NAME }}`
+          2. Extract to your BlancoMonitor directory
+          3. Run `BlancoMonitor.exe`
+          
+          Or let the in-app updater handle it automatically!
+        files: |
+          ${{ steps.package.outputs.ZIP_NAME }}
+          update-manifest.json
+        draft: false
+        prerelease: false

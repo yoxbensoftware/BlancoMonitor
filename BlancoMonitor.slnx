@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="BlancoMonitor.Tests/BlancoMonitor.Tests.csproj" />
+  <Project Path="BlancoMonitor/BlancoMonitor.csproj" />
+</Solution>

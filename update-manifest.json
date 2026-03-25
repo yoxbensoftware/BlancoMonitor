@@ -1,0 +1,11 @@
+{
+  "latestVersion": "v.0001",
+  "latestBuildNumber": 1,
+  "downloadUrl": "https://github.com/GITHUB_USER/GITHUB_REPO/releases/download/v0001/BlancoMonitor.zip",
+  "sizeBytes": 0,
+  "releaseNotes": "Initial release.",
+  "releasedAt": "2025-01-01T00:00:00Z",
+  "sha256Hash": null,
+  "isMandatory": false,
+  "minimumSupportedVersion": "v.0001"
+}

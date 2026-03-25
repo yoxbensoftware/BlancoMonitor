@@ -1,0 +1,11 @@
+{
+  "latestVersion": "v.0002",
+  "latestBuildNumber": 2,
+  "downloadUrl": "https://releases.example.com/blanco/BlancoMonitor_v0002.zip",
+  "sizeBytes": 15728640,
+  "releaseNotes": "v.0002 — 2025-07-14\n\n• Multi-language support (English, German, Turkish)\n• Auto-update system with safe rollback\n• New \"B\" logo with neon glow\n• Language & update preferences in Settings\n• Performance improvements in network analysis",
+  "releasedAt": "2025-07-14T10:00:00Z",
+  "sha256Hash": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+  "isMandatory": false,
+  "minimumSupportedVersion": "v.0001"
+}

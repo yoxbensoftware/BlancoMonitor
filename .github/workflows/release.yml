@@ -1,0 +1,118 @@
+name: Release BlancoMonitor
+
+on:
+  push:
+    tags:
+      - 'v*'          # Trigger on version tags: v0002, v0003, ...
+
+permissions:
+  contents: write   # needed to create releases and push manifest
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── Extract version from tag ────────────────────────────────
+      - name: Parse version
+        id: ver
+        shell: pwsh
+        run: |
+          $tag   = "${{ github.ref_name }}"               # e.g. v0005
+          $build = [int]($tag -replace '[^0-9]', '')      # e.g. 5
+          echo "tag=$tag"       >> $env:GITHUB_OUTPUT
+          echo "build=$build"   >> $env:GITHUB_OUTPUT
+          echo "display=v.$($build.ToString('D4'))" >> $env:GITHUB_OUTPUT
+
+      # ── Patch version in .csproj ────────────────────────────────
+      - name: Patch csproj version
+        shell: pwsh
+        run: |
+          $build   = "${{ steps.ver.outputs.build }}"
+          $display = "${{ steps.ver.outputs.display }}"
+          $csproj  = "BlancoMonitor\BlancoMonitor.csproj"
+          (Get-Content $csproj) `
+            -replace '<Version>.*</Version>',               "<Version>1.0.0.$build</Version>" `
+            -replace '<AssemblyVersion>.*</AssemblyVersion>',"<AssemblyVersion>1.0.0.$build</AssemblyVersion>" `
+            -replace '<FileVersion>.*</FileVersion>',        "<FileVersion>1.0.0.$build</FileVersion>" `
+            -replace '<InformationalVersion>.*</InformationalVersion>',"<InformationalVersion>$display</InformationalVersion>" |
+          Set-Content $csproj
+
+      # ── Build & Publish ─────────────────────────────────────────
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Publish (self-contained, win-x64)
+        shell: pwsh
+        run: |
+          dotnet publish BlancoMonitor\BlancoMonitor.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -o publish\
+
+      # ── Package as ZIP ──────────────────────────────────────────
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.ver.outputs.tag }}"
+          Compress-Archive -Path publish\* -DestinationPath "BlancoMonitor_$tag.zip" -Force
+          $size = (Get-Item "BlancoMonitor_$tag.zip").Length
+          $hash = (Get-FileHash "BlancoMonitor_$tag.zip" -Algorithm SHA256).Hash.ToLower()
+          echo "zip_name=BlancoMonitor_$tag.zip" >> $env:GITHUB_OUTPUT
+          echo "zip_size=$size"                  >> $env:GITHUB_OUTPUT
+          echo "zip_hash=$hash"                  >> $env:GITHUB_OUTPUT
+        id: pkg
+
+      # ── Create GitHub Release ───────────────────────────────────
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: BlancoMonitor ${{ steps.ver.outputs.display }}
+          files: ${{ steps.pkg.outputs.zip_name }}
+          generate_release_notes: true
+
+      # ── Update update-manifest.json ─────────────────────────────
+      - name: Update manifest
+        shell: pwsh
+        run: |
+          $tag     = "${{ steps.ver.outputs.tag }}"
+          $build   = ${{ steps.ver.outputs.build }}
+          $display = "${{ steps.ver.outputs.display }}"
+          $repo    = "${{ github.repository }}"
+          $size    = ${{ steps.pkg.outputs.zip_size }}
+          $hash    = "${{ steps.pkg.outputs.zip_hash }}"
+          $now     = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')
+          $dlUrl   = "https://github.com/$repo/releases/download/$tag/BlancoMonitor_$tag.zip"
+
+          $manifest = [ordered]@{
+            latestVersion      = $display
+            latestBuildNumber  = $build
+            downloadUrl        = $dlUrl
+            sizeBytes          = $size
+            releaseNotes       = "See release page: https://github.com/$repo/releases/tag/$tag"
+            releasedAt         = $now
+            sha256Hash         = $hash
+            isMandatory        = $false
+            minimumSupportedVersion = "v.0001"
+          }
+          $manifest | ConvertTo-Json | Set-Content update-manifest.json
+
+      - name: Commit manifest
+        shell: pwsh
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add update-manifest.json
+          git commit -m "chore: update manifest for ${{ steps.ver.outputs.tag }}" || echo "Nothing to commit"
+          git push origin HEAD:main

@@ -1,7 +1,7 @@
 # BlancoMonitor — Architecture Document
 
 ## 1. High-Level Architecture (Textual Diagram)
-
+ 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │                     PRESENTATION LAYER (WinForms MDI)                │
